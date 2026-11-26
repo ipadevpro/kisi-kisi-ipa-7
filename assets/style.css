@@ -360,6 +360,13 @@ td { font-variant-numeric: tabular-nums }
 .m-bub { fill: var(--on-color); opacity: .6 }
 .m-lip { fill: var(--surface); stroke: var(--ink); stroke-width: 4 }
 
+@media (max-width: 420px) {
+  .top .in { gap: 4px }
+  .top .icon-btn { width: 40px }
+  .brand { font-size: 18px; gap: 6px }
+  .brand svg { width: 30px; height: 30px }
+  .stat { font-size: 15px; margin-inline: 2px }
+}
 @media (max-width: 480px) {
   .hero { grid-template-columns: 1fr }
   .hero .mascot { grid-row: 1; width: 96px }

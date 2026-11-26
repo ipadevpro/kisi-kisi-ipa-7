@@ -28,7 +28,7 @@
 
   /* ---------- penyimpanan lokal ---------- */
   const KEY = 'jejak-ipa7-v1';
-  const fresh = () => ({ done: {}, xp: 0, streak: 0, last: null, mute: false, profile: null, device: null, queue: [] });
+  const fresh = () => ({ done: {}, xp: 0, streak: 0, last: null, mute: false, music: false, profile: null, device: null, queue: [] });
   let S;
   try { S = Object.assign(fresh(), JSON.parse(localStorage.getItem(KEY) || 'null') || {}); } catch (e) { S = fresh(); }
   const uuid = () => (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : 'id-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
@@ -71,6 +71,80 @@
   function ac() { try { Object.keys(SFX_NOTES).forEach(audioFor); } catch (e) { } } // siapkan bunyi saat interaksi pertama
   const SFX = new Proxy({}, { get: (_, name) => () => { const a = audioFor(name); a.currentTime = 0; const pr = a.play(); if (pr && pr.catch) pr.catch(() => { }); } });
   function sfx(name) { if (S.mute) return; try { SFX[name](); } catch (e) { } }
+  /* ---------- musik latar ----------
+     Lagu orisinal yang disusun di sini dan dirender di browser menjadi WAV berulang (tanpa file, tanpa lisensi pihak lain).
+     116 BPM, C mayor, 8 birama: C – Am – F – G (dua kali). Volume sudah dibuat pelan di dalam WAV karena iPhone tidak
+     mengizinkan mengatur volume elemen <audio> lewat kode. Mati secara bawaan. */
+  function renderMusic() {
+    const sr = 22050, bpm = 116, e8 = 60 / bpm / 2, bars = 8, loop = bars * 8 * e8, n = Math.round(loop * sr), tail = sr;
+    const buf = new Float32Array(n + tail), mf = m => 440 * Math.pow(2, (m - 69) / 12);
+    const voice = (m, t0, len, kind, vol) => {
+      const f = mf(m), s0 = Math.round(t0 * sr), L = Math.round(len * sr), att = Math.round(0.006 * sr);
+      for (let i = 0; i < L; i++) {
+        const t = i / sr, ph = (f * t) % 1;
+        let v;
+        if (kind === 'bass') v = 4 * Math.abs(ph - .5) - 1;
+        else if (kind === 'pluck') v = Math.sin(2 * Math.PI * ph) + 0.25 * Math.sin(4 * Math.PI * ph);
+        else v = 0.7 * (4 * Math.abs(ph - .5) - 1) + 0.3 * (ph < .25 ? 1 : -1) * 0.5;
+        const env = Math.min(1, i / att) * (kind === 'pluck' ? Math.exp(-t * 9) : kind === 'bass' ? Math.exp(-t * 3) : Math.max(0, 1 - t / len) * (0.65 + 0.35 * Math.exp(-t * 8)));
+        buf[s0 + i] += v * env * vol;
+      }
+    };
+    let seed = 7; const noise = () => { seed = (seed * 16807) % 2147483647; return seed / 1073741823.5 - 1; };
+    const hit = (t0, len, vol, kind) => {
+      const s0 = Math.round(t0 * sr), L = Math.round(len * sr); let prev = 0;
+      for (let i = 0; i < L; i++) {
+        const t = i / sr; let v;
+        if (kind === 'kick') v = Math.sin(2 * Math.PI * (45 * t + 40 * (1 - Math.exp(-t * 30)) / 30 * 1.0 + 0)) * Math.exp(-t * 18);
+        else { const w = noise(); v = (kind === 'hat' ? w - prev : w * 0.6 + prev * 0.4) * Math.exp(-t * (kind === 'hat' ? 60 : 22)); prev = w; }
+        buf[s0 + i] += v * vol;
+      }
+    };
+    const CH = [[48, 52, 55], [45, 48, 52], [41, 45, 48], [43, 47, 50]]; // C, Am, F, G
+    const MEL = [
+      [76, 0, 79, 0, 76, 74, 72, 0], [72, 0, 76, 0, 74, 72, 69, 0], [69, 72, 74, 0, 77, 0, 76, 74], [74, 0, 71, 0, 74, 0, 0, 0],
+      [76, 0, 79, 0, 81, 79, 76, 0], [76, 0, 81, 0, 79, 76, 74, 0], [72, 74, 76, 0, 77, 76, 74, 72], [74, 0, 79, 0, 72, 0, 0, 0]
+    ];
+    for (let b = 0; b < bars; b++) {
+      const ch = CH[b % 4], t = b * 8 * e8;
+      [0, 3, 4, 7].forEach((k, j) => voice(ch[0] - 12 + (j === 3 ? 7 : 0), t + k * e8, e8 * (j === 0 ? 2.6 : 1.2), 'bass', 0.30));
+      const arp = [ch[0] + 12, ch[1] + 12, ch[2] + 12, ch[1] + 12, ch[0] + 24, ch[2] + 12, ch[1] + 12, ch[2] + 12];
+      arp.forEach((m, k) => voice(m, t + k * e8, e8 * 1.6, 'pluck', 0.10));
+      MEL[b].forEach((m, k) => { if (!m) return; let len = 1; while (k + len < 8 && !MEL[b][k + len] && len < 2) len++; voice(m, t + k * e8, e8 * len * 0.95, 'lead', 0.13); });
+      for (let k = 0; k < 8; k++) {
+        if (k === 0 || k === 4) hit(t + k * e8, 0.25, 0.55, 'kick');
+        if (k === 2 || k === 6) hit(t + k * e8, 0.16, 0.16, 'snare');
+        if (k % 2 === 1) hit(t + k * e8, 0.05, 0.10, 'hat');
+      }
+    }
+    for (let i = 0; i < tail; i++) buf[i] += buf[n + i]; // ekor nada di akhir dibungkus ke awal agar loop mulus
+    let peak = 0; for (let i = 0; i < n; i++) peak = Math.max(peak, Math.abs(buf[i]));
+    const gain = 0.45 / (peak || 1);
+    const out = new ArrayBuffer(44 + n * 2), dv = new DataView(out), w = (o, str) => { for (let i = 0; i < str.length; i++) dv.setUint8(o + i, str.charCodeAt(i)); };
+    w(0, 'RIFF'); dv.setUint32(4, 36 + n * 2, true); w(8, 'WAVE'); w(12, 'fmt '); dv.setUint32(16, 16, true); dv.setUint16(20, 1, true); dv.setUint16(22, 1, true);
+    dv.setUint32(24, sr, true); dv.setUint32(28, sr * 2, true); dv.setUint16(32, 2, true); dv.setUint16(34, 16, true); w(36, 'data'); dv.setUint32(40, n * 2, true);
+    for (let i = 0; i < n; i++) dv.setInt16(44 + i * 2, Math.max(-1, Math.min(1, buf[i] * gain)) * 32767, true);
+    return URL.createObjectURL(new Blob([out], { type: 'audio/wav' }));
+  }
+  let BGM = null, bgmArmed = false;
+  function bgmEl() { if (!BGM) { BGM = new Audio(renderMusic()); BGM.loop = true; BGM.preload = 'auto'; } return BGM; }
+  function bgmPlay() {
+    if (!S.music || document.visibilityState === 'hidden') return;
+    const pr = bgmEl().play(); if (pr && pr.catch) pr.catch(armBgm);
+  }
+  function bgmStop() { if (BGM) BGM.pause(); }
+  function armBgm() { // browser baru mengizinkan musik setelah layar disentuh
+    if (bgmArmed) return; bgmArmed = true;
+    const go = () => { bgmArmed = false; window.removeEventListener('pointerdown', go, true); window.removeEventListener('keydown', go, true); bgmPlay(); };
+    window.addEventListener('pointerdown', go, true); window.addEventListener('keydown', go, true);
+  }
+  const musicBtn = attr => `<button class="icon-btn" ${attr} data-music aria-pressed="${S.music}" aria-label="Musik latar">${S.music ? ICON.music : ICON.musicOff}</button>`;
+  function setMusic(on) {
+    S.music = on; save();
+    document.querySelectorAll('[data-music]').forEach(b => { b.setAttribute('aria-pressed', String(on)); b.innerHTML = on ? ICON.music : ICON.musicOff; });
+    if (on) bgmPlay(); else bgmStop();
+  }
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') bgmStop(); else bgmPlay(); });
   function buzz(p) { if (S.mute || !navigator.vibrate) return; try { navigator.vibrate(p); } catch (e) { } }
   function celebrate() {
     if (reduceMotion() || typeof window.confetti !== 'function') return;
@@ -171,6 +245,7 @@
     <div class="brand">${mascot('', 'happy')}<span>Jejak IPA 7</span></div>
     <div class="stat fire ${st ? 'on' : ''}" title="Hari beruntun">${ICON.fire}<span>${st}</span><span class="sr-only"> hari beruntun</span></div>
     <div class="stat xp" title="Total XP">${ICON.bolt}<span>${S.xp}</span><span class="lbl">&nbsp;XP</span></div>
+    ${musicBtn('data-act="music"')}
     <button class="icon-btn" data-act="mute" aria-pressed="${!S.mute}" aria-label="Efek suara dan getar">${S.mute ? ICON.mute : ICON.sound}</button>
   </div></header>
   <main id="main" tabindex="-1">
@@ -252,6 +327,7 @@
     else if (a === 'test') act.test();
     else if (a === 'notes') act.notes(b.dataset.id);
     else if (a === 'kisi') act.kisi('all');
+    else if (a === 'music') setMusic(!S.music);
     else if (a === 'mute') { S.mute = !S.mute; save(); b.setAttribute('aria-pressed', String(!S.mute)); b.innerHTML = S.mute ? ICON.mute : ICON.sound; if (!S.mute) sfx('ok'); }
     else if (a === 'profile-edit') { profileOpen = true; refreshProfile(); app.querySelector('#pf-nama').focus(); }
     else if (a === 'profile-cancel') { profileOpen = false; refreshProfile(); }
@@ -393,7 +469,7 @@
   function renderStep() {
     const it = L.queue[L.pos]; L.phase = 'answer'; const v = VIEW[it.t](it); L.view = v; L.item = it; const p = pct();
     const isTip = it.t === 'tip', les = LESSONS[it.lid];
-    stage.innerHTML = `<div class="st-head"><div class="st-in head-row"><button class="icon-btn" data-st="quit" aria-label="Keluar dari latihan">${ICON.x}</button><div class="bar" role="progressbar" aria-label="Kemajuan" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(p * 100)}"><i style="width:${Math.max(p * 100, 3)}%"></i></div><span class="combo" aria-live="polite">${L.combo >= 3 ? L.combo + ' beruntun' : ''}</span></div></div>
+    stage.innerHTML = `<div class="st-head"><div class="st-in head-row"><button class="icon-btn" data-st="quit" aria-label="Keluar dari latihan">${ICON.x}</button><div class="bar" role="progressbar" aria-label="Kemajuan" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(p * 100)}"><i style="width:${Math.max(p * 100, 3)}%"></i></div><span class="combo" aria-live="polite">${L.combo >= 3 ? L.combo + ' beruntun' : ''}</span>${musicBtn('data-st="music"')}</div></div>
   <div class="st-body" tabindex="-1"><div class="st-in"><div class="st-kicker">${KICK[it.t]}${L.mode === 'test' ? `<span class="pill">Soal ${L.pos + 1} dari ${L.total}</span><span class="pill">${les.unit.title}</span>` : ''}${!isTip && L.mode === 'lesson' && L.seen.has(it.uid) ? '<span class="pill">Coba lagi</span>' : ''}</div><div class="item">${v.html}</div></div></div>
   <div class="st-foot"><div class="st-in foot-row"><div class="fb" aria-live="polite"></div><button class="btn btn-green main" data-st="main" ${isTip ? '' : 'disabled'}>${isTip ? 'Lanjut' : 'Periksa'}</button></div></div>`;
     const root = stage.querySelector('.item');
@@ -507,7 +583,8 @@
 
   stage.addEventListener('click', e => {
     const b = e.target.closest('[data-st]'); if (!b) return; const a = b.dataset.st;
-    if (a === 'quit') requestQuit();
+    if (a === 'music') setMusic(!S.music);
+    else if (a === 'quit') requestQuit();
     else if (a === 'main') onMain();
     else if (a === 'again') { if (L && L.mode === 'test') startTest(); else startLesson(L.id); }
     else if (a === 'profile') { profileOpen = true; goHome(); setTimeout(() => { const i = document.getElementById('pf-nama'); if (i) { i.scrollIntoView({ block: 'center' }); i.focus(); } }, 60); }
@@ -536,6 +613,7 @@
   }
 
   renderHome();
+  if (S.music) armBgm();
   route();
   flush();
 })();
