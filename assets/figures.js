@@ -13,11 +13,15 @@ function fmt(n, d) {
   NUMFMT[key] = NUMFMT[key] || new Intl.NumberFormat('id-ID', { minimumFractionDigits: d, maximumFractionDigits: d });
   return NUMFMT[key].format(n);
 }
-function parseNum(s) {
+/* Semua cara baca yang masuk akal untuk angka yang diketik siswa.
+   Koma selalu desimal. Titik bisa desimal (keyboard HP sering hanya punya titik, mis. 0.036)
+   atau pemisah ribuan gaya Indonesia (2.500). Jawaban benar bila salah satu cara baca cocok. */
+function parseNums(s) {
   s = String(s).trim().replace(/\s/g, '');
-  if (/^-?\d{1,3}(\.\d{3})+(,\d+)?$/.test(s)) s = s.replace(/\./g, '');
-  s = s.replace(',', '.');
-  return /^-?(\d+\.?\d*|\.\d+)$/.test(s) ? parseFloat(s) : NaN;
+  const out = [], num = /^-?(\d+\.?\d*|\.\d+)$/;
+  if (/^-?\d{1,3}(\.\d{3})+(,\d+)?$/.test(s)) { const t = s.replace(/\./g, '').replace(',', '.'); if (num.test(t)) out.push(parseFloat(t)); }
+  if (!s.includes(',') || !s.includes('.')) { const t = s.replace(',', '.'); if (num.test(t)) out.push(parseFloat(t)); }
+  return out;
 }
 const NAMES = ['Raka', 'Nayla', 'Bima', 'Salsa', 'Fikri', 'Alya', 'Dimas', 'Keisha', 'Reza', 'Tiara', 'Galih', 'Nadin', 'Arka', 'Zahra', 'Yusuf', 'Kirana'];
 const fig = (svg, cap) => `<figure class="fig">${svg}${cap ? `<figcaption>${cap}</figcaption>` : ''}</figure>`;

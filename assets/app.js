@@ -404,9 +404,9 @@
     num(it) {
       let root; const id = 'num-' + it.uid;
       return {
-        html: `${ctxOf(it)}<h2 class="q" id="${id}-q">${it.q}</h2><div class="num-row"><label for="${id}">Jawabanmu${it.unit ? ` (dalam ${it.unit})` : ''}</label><input class="num-in" id="${id}" name="jawaban" type="text" inputmode="decimal" autocomplete="off" spellcheck="false" aria-describedby="${id}-q"><span class="unit-tag" aria-hidden="true">${it.unit || ''}</span></div><div class="hint">Pakai koma untuk desimal, misalnya 2,36.</div>`,
+        html: `${ctxOf(it)}<h2 class="q" id="${id}-q">${it.q}</h2><div class="num-row"><label for="${id}">Jawabanmu${it.unit ? ` (dalam ${it.unit})` : ''}</label><input class="num-in" id="${id}" name="jawaban" type="text" inputmode="decimal" autocomplete="off" spellcheck="false" aria-describedby="${id}-q"><span class="unit-tag" aria-hidden="true">${it.unit || ''}</span></div><div class="hint">Desimal boleh pakai koma atau titik, misalnya 2,36 atau 2.36.</div>`,
         mount(r, ready) { root = r; const inp = r.querySelector('input'); inp.addEventListener('input', () => ready(inp.value.trim() !== '')); if (matchMedia('(pointer: fine)').matches) setTimeout(() => { try { inp.focus({ preventScroll: true }); } catch (e) { } }, 50); },
-        check() { const inp = root.querySelector('input'); inp.readOnly = true; const n = parseNum(inp.value), ok = !isNaN(n) && Math.abs(n - it.ans) <= (it.tol == null ? 1e-6 : it.tol); inp.classList.add(ok ? 'right' : 'wrong'); return { ok, answer: `${fmt(it.ans, it.dec)} ${it.unit || ''}` }; }
+        check() { const inp = root.querySelector('input'); inp.readOnly = true; const tol = it.tol == null ? 1e-6 : it.tol, ok = parseNums(inp.value).some(n => Math.abs(n - it.ans) <= tol); inp.classList.add(ok ? 'right' : 'wrong'); return { ok, answer: `${fmt(it.ans, it.dec)} ${it.unit || ''}` }; }
       };
     },
     match(it) {
