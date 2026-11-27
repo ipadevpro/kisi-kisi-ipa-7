@@ -72,65 +72,107 @@
   const SFX = new Proxy({}, { get: (_, name) => () => { const a = audioFor(name); a.currentTime = 0; const pr = a.play(); if (pr && pr.catch) pr.catch(() => { }); } });
   function sfx(name) { if (S.mute) return; try { SFX[name](); } catch (e) { } }
   /* ---------- musik latar ----------
-     Lagu orisinal yang disusun di sini dan dirender di browser menjadi WAV berulang (tanpa file, tanpa lisensi pihak lain).
-     116 BPM, C mayor, 8 birama: C – Am – F – G (dua kali). Volume sudah dibuat pelan di dalam WAV karena iPhone tidak
-     mengizinkan mengatur volume elemen <audio> lewat kode. Mati secara bawaan. */
-  function renderMusic() {
-    const sr = 22050, bpm = 116, e8 = 60 / bpm / 2, bars = 8, loop = bars * 8 * e8, n = Math.round(loop * sr), tail = sr;
-    const buf = new Float32Array(n + tail), mf = m => 440 * Math.pow(2, (m - 69) / 12);
-    const voice = (m, t0, len, kind, vol) => {
-      const f = mf(m), s0 = Math.round(t0 * sr), L = Math.round(len * sr), att = Math.round(0.006 * sr);
+     Lagu lo-fi orisinal yang disusun di sini dan dirender di browser menjadi WAV berulang (tanpa file, tanpa lisensi pihak lain).
+     76 BPM dengan swing, akor Fmaj7 – Em7 – Dm7 – Cmaj7, electric piano, bass lembut, drum boom-bap pelan,
+     melodi jarang, plus desis dan kresek piringan hitam. Seluruh campuran diredam nada tingginya supaya hangat.
+     Volume sudah dibuat pelan di dalam WAV karena iPhone tidak mengizinkan mengatur volume <audio> lewat kode. */
+  function renderMusicWav() { // harus berdiri sendiri: kodenya dikirim ke Web Worker
+    const sr = 22050, bpm = 76, beat = 60 / bpm, e8 = beat / 2, bars = 8, loop = bars * 4 * beat;
+    const n = Math.round(loop * sr), tail = 2 * sr, buf = new Float32Array(n + tail);
+    const mf = m => 440 * Math.pow(2, (m - 69) / 12), TAU = 2 * Math.PI, wowF = 12 / loop;
+    const at = (bar, pos8) => bar * 4 * beat + pos8 * e8 + (pos8 % 2 === 1 ? e8 * 0.32 : 0); // swing pada ketukan ganjil
+    let seed = 11; const rnd01 = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
+    function note(m, t0, len, kind, vol) {
+      const f = mf(m), s0 = Math.round(t0 * sr), L = Math.round((len + (kind === 'ep' ? 0.8 : 0.25)) * sr), att = Math.round((kind === 'lead' ? 0.04 : 0.008) * sr);
+      let ph = 0;
       for (let i = 0; i < L; i++) {
-        const t = i / sr, ph = (f * t) % 1;
-        let v;
-        if (kind === 'bass') v = 4 * Math.abs(ph - .5) - 1;
-        else if (kind === 'pluck') v = Math.sin(2 * Math.PI * ph) + 0.25 * Math.sin(4 * Math.PI * ph);
-        else v = 0.7 * (4 * Math.abs(ph - .5) - 1) + 0.3 * (ph < .25 ? 1 : -1) * 0.5;
-        const env = Math.min(1, i / att) * (kind === 'pluck' ? Math.exp(-t * 9) : kind === 'bass' ? Math.exp(-t * 3) : Math.max(0, 1 - t / len) * (0.65 + 0.35 * Math.exp(-t * 8)));
-        buf[s0 + i] += v * env * vol;
-      }
-    };
-    let seed = 7; const noise = () => { seed = (seed * 16807) % 2147483647; return seed / 1073741823.5 - 1; };
-    const hit = (t0, len, vol, kind) => {
-      const s0 = Math.round(t0 * sr), L = Math.round(len * sr); let prev = 0;
-      for (let i = 0; i < L; i++) {
-        const t = i / sr; let v;
-        if (kind === 'kick') v = Math.sin(2 * Math.PI * (45 * t + 40 * (1 - Math.exp(-t * 30)) / 30 * 1.0 + 0)) * Math.exp(-t * 18);
-        else { const w = noise(); v = (kind === 'hat' ? w - prev : w * 0.6 + prev * 0.4) * Math.exp(-t * (kind === 'hat' ? 60 : 22)); prev = w; }
-        buf[s0 + i] += v * vol;
-      }
-    };
-    const CH = [[48, 52, 55], [45, 48, 52], [41, 45, 48], [43, 47, 50]]; // C, Am, F, G
-    const MEL = [
-      [76, 0, 79, 0, 76, 74, 72, 0], [72, 0, 76, 0, 74, 72, 69, 0], [69, 72, 74, 0, 77, 0, 76, 74], [74, 0, 71, 0, 74, 0, 0, 0],
-      [76, 0, 79, 0, 81, 79, 76, 0], [76, 0, 81, 0, 79, 76, 74, 0], [72, 74, 76, 0, 77, 76, 74, 72], [74, 0, 79, 0, 72, 0, 0, 0]
-    ];
-    for (let b = 0; b < bars; b++) {
-      const ch = CH[b % 4], t = b * 8 * e8;
-      [0, 3, 4, 7].forEach((k, j) => voice(ch[0] - 12 + (j === 3 ? 7 : 0), t + k * e8, e8 * (j === 0 ? 2.6 : 1.2), 'bass', 0.30));
-      const arp = [ch[0] + 12, ch[1] + 12, ch[2] + 12, ch[1] + 12, ch[0] + 24, ch[2] + 12, ch[1] + 12, ch[2] + 12];
-      arp.forEach((m, k) => voice(m, t + k * e8, e8 * 1.6, 'pluck', 0.10));
-      MEL[b].forEach((m, k) => { if (!m) return; let len = 1; while (k + len < 8 && !MEL[b][k + len] && len < 2) len++; voice(m, t + k * e8, e8 * len * 0.95, 'lead', 0.13); });
-      for (let k = 0; k < 8; k++) {
-        if (k === 0 || k === 4) hit(t + k * e8, 0.25, 0.55, 'kick');
-        if (k === 2 || k === 6) hit(t + k * e8, 0.16, 0.16, 'snare');
-        if (k % 2 === 1) hit(t + k * e8, 0.05, 0.10, 'hat');
+        const t = i / sr, abs = t0 + t;
+        const wow = 1 + 0.0025 * Math.sin(TAU * wowF * abs);
+        const vib = kind === 'lead' ? 1 + 0.004 * Math.sin(TAU * 5 * t) * Math.min(1, t * 3) : 1;
+        ph += f * wow * vib / sr;
+        let v, env;
+        if (kind === 'ep') { // electric piano: dasar sinus + sedikit "bel" di awal + tremolo
+          v = Math.sin(TAU * ph) + 0.28 * Math.sin(TAU * 2 * ph) * Math.exp(-t * 5) + 0.06 * Math.sin(TAU * 3 * ph) * Math.exp(-t * 9);
+          env = Math.exp(-t * 1.1) * (t < len ? 1 : Math.exp(-(t - len) * 6)) * (1 + 0.12 * Math.sin(TAU * 4.2 * t));
+        } else if (kind === 'bass') {
+          v = Math.sin(TAU * ph) + 0.35 * Math.sin(TAU * 2 * ph);
+          env = Math.exp(-t * 1.6) * (t < len ? 1 : Math.exp(-(t - len) * 14));
+        } else { // melodi lembut seperti flute
+          v = Math.sin(TAU * ph) + 0.12 * Math.sin(TAU * 2 * ph);
+          env = (t < len ? 1 - 0.3 * (t / len) : 0.7 * Math.exp(-(t - len) * 8));
+        }
+        buf[s0 + i] += v * env * Math.min(1, i / att) * vol;
       }
     }
-    for (let i = 0; i < tail; i++) buf[i] += buf[n + i]; // ekor nada di akhir dibungkus ke awal agar loop mulus
-    let peak = 0; for (let i = 0; i < n; i++) peak = Math.max(peak, Math.abs(buf[i]));
+    function drum(kind, t0, vol) {
+      const s0 = Math.round(t0 * sr), L = Math.round((kind === 'kick' ? 0.35 : kind === 'snare' ? 0.22 : 0.06) * sr);
+      let lp = 0, ph = 0;
+      for (let i = 0; i < L; i++) {
+        const t = i / sr, w = rnd01() * 2 - 1; let v;
+        if (kind === 'kick') { ph += (48 + 70 * Math.exp(-t * 28)) / sr; v = Math.sin(TAU * ph) * Math.exp(-t * 9); }
+        else if (kind === 'snare') { lp += 0.25 * (w - lp); v = (lp * 1.6 * Math.exp(-t * 16)) + 0.5 * Math.sin(TAU * 185 * t) * Math.exp(-t * 30); }
+        else { lp += 0.6 * (w - lp); v = (w - lp) * Math.exp(-t * 70); }
+        buf[s0 + i] += v * vol;
+      }
+    }
+    const CH = [[53, 57, 60, 64], [52, 55, 59, 62], [50, 53, 57, 60], [48, 52, 55, 59, 62], [53, 57, 60, 64], [52, 55, 59, 62], [50, 53, 57, 60], [50, 53, 57, 60, 65]];
+    const BASS = [41, 40, 38, 36, 41, 40, 38, 43];
+    const MEL = { 4: [[72, 0, 3], [69, 3, 1], [67, 4, 4]], 5: [[71, 0, 2], [67, 2, 2], [64, 4, 4]], 6: [[69, 0, 2], [72, 2, 2], [74, 4, 3], [72, 7, 1]], 7: [[71, 0, 4], [67, 5, 3]] };
+    for (let b = 0; b < bars; b++) {
+      CH[b].forEach((m, k) => { note(m, at(b, 0) + k * 0.018, beat * 2.6, 'ep', 0.075); note(m, at(b, 5) + k * 0.014, beat * 0.9, 'ep', 0.045); });
+      note(BASS[b] + 12, at(b, 0), beat * 1.7, 'bass', 0.26);
+      note(BASS[b] + 12 + (b % 2 ? 7 : 0), at(b, 5), beat * 1.1, 'bass', 0.2);
+      (MEL[b] || []).forEach(([m, p, l]) => note(m, at(b, p), l * e8 * 0.95, 'lead', 0.09));
+      drum('kick', at(b, 0), 0.55); drum('kick', at(b, 3), 0.35); if (b % 2) drum('kick', at(b, 5), 0.3);
+      drum('snare', at(b, 2), 0.22); drum('snare', at(b, 6), 0.22);
+      for (let k = 0; k < 8; k++) drum('hat', at(b, k), k % 2 ? 0.05 : 0.09);
+    }
+    for (let i = 0; i < tail; i++) buf[i % n] += buf[n + i]; // ekor nada dibungkus ke awal agar loop mulus
+    const out = new Float32Array(n);
+    let hiss = 0;
+    for (let i = 0; i < n; i++) { // desis + kresek piringan hitam
+      hiss += 0.08 * ((rnd01() * 2 - 1) - hiss);
+      out[i] = buf[i] + hiss * 0.02 + (rnd01() < 0.00035 ? (rnd01() - 0.5) * 0.25 : 0);
+    }
+    const a1 = 1 - Math.exp(-TAU * 2600 / sr); let y = 0; // redam nada tinggi; dua kali agar sambungan loop mulus
+    for (let pass = 0; pass < 2; pass++) for (let i = 0; i < n; i++) { y += a1 * (out[i] - y); if (pass) out[i] = y; }
+    let peak = 0; for (let i = 0; i < n; i++) peak = Math.max(peak, Math.abs(out[i]));
     const gain = 0.45 / (peak || 1);
-    const out = new ArrayBuffer(44 + n * 2), dv = new DataView(out), w = (o, str) => { for (let i = 0; i < str.length; i++) dv.setUint8(o + i, str.charCodeAt(i)); };
+    const wav = new ArrayBuffer(44 + n * 2), dv = new DataView(wav), w = (o, str) => { for (let i = 0; i < str.length; i++) dv.setUint8(o + i, str.charCodeAt(i)); };
     w(0, 'RIFF'); dv.setUint32(4, 36 + n * 2, true); w(8, 'WAVE'); w(12, 'fmt '); dv.setUint32(16, 16, true); dv.setUint16(20, 1, true); dv.setUint16(22, 1, true);
     dv.setUint32(24, sr, true); dv.setUint32(28, sr * 2, true); dv.setUint16(32, 2, true); dv.setUint16(34, 16, true); w(36, 'data'); dv.setUint32(40, n * 2, true);
-    for (let i = 0; i < n; i++) dv.setInt16(44 + i * 2, Math.max(-1, Math.min(1, buf[i] * gain)) * 32767, true);
-    return URL.createObjectURL(new Blob([out], { type: 'audio/wav' }));
+    for (let i = 0; i < n; i++) dv.setInt16(44 + i * 2, Math.max(-1, Math.min(1, out[i] * gain)) * 32767, true);
+    return wav;
   }
-  let BGM = null, bgmArmed = false;
-  function bgmEl() { if (!BGM) { BGM = new Audio(renderMusic()); BGM.loop = true; BGM.preload = 'auto'; } return BGM; }
+  let BGM = null, bgmArmed = false, bgmUrl = null, bgmJob = null, silentUrl = null;
+  function bgmRender() { // dirender di Web Worker supaya layar tidak macet di HP lambat
+    if (bgmUrl) return Promise.resolve(bgmUrl);
+    if (bgmJob) return bgmJob;
+    bgmJob = new Promise(resolve => {
+      const done = buf => { bgmUrl = URL.createObjectURL(new Blob([buf], { type: 'audio/wav' })); resolve(bgmUrl); };
+      const inline = () => done(renderMusicWav());
+      try {
+        const src = 'onmessage=function(){var b=(' + renderMusicWav.toString() + ')();postMessage(b,[b]);};';
+        const wk = new Worker(URL.createObjectURL(new Blob([src], { type: 'text/javascript' })));
+        wk.onmessage = e => { wk.terminate(); done(e.data); };
+        wk.onerror = () => { wk.terminate(); inline(); };
+        wk.postMessage(0);
+      } catch (e) { inline(); }
+    });
+    return bgmJob;
+  }
   function bgmPlay() {
     if (!S.music || document.visibilityState === 'hidden') return;
-    const pr = bgmEl().play(); if (pr && pr.catch) pr.catch(armBgm);
+    if (!BGM) { BGM = new Audio(); BGM.loop = true; BGM.preload = 'auto'; }
+    if (bgmUrl) {
+      if (BGM.src !== bgmUrl) BGM.src = bgmUrl;
+      const pr = BGM.play(); if (pr && pr.catch) pr.catch(armBgm);
+      return;
+    }
+    // Lagu belum siap: putar hening dulu di sentuhan yang sama agar browser mengizinkan audio, lalu ganti setelah render selesai.
+    if (!silentUrl) silentUrl = makeWav([], 0.2);
+    BGM.src = silentUrl; const pr = BGM.play(); if (pr && pr.catch) pr.catch(() => { });
+    bgmRender().then(() => { if (!S.music || document.visibilityState === 'hidden') return; BGM.src = bgmUrl; const p2 = BGM.play(); if (p2 && p2.catch) p2.catch(armBgm); });
   }
   function bgmStop() { if (BGM) BGM.pause(); }
   function armBgm() { // browser baru mengizinkan musik setelah layar disentuh
