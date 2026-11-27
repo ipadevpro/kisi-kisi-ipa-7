@@ -137,7 +137,7 @@
     const a1 = 1 - Math.exp(-TAU * 2600 / sr); let y = 0; // redam nada tinggi; dua kali agar sambungan loop mulus
     for (let pass = 0; pass < 2; pass++) for (let i = 0; i < n; i++) { y += a1 * (out[i] - y); if (pass) out[i] = y; }
     let peak = 0; for (let i = 0; i < n; i++) peak = Math.max(peak, Math.abs(out[i]));
-    const gain = 0.45 / (peak || 1);
+    const gain = 0.65 / (peak || 1);
     const wav = new ArrayBuffer(44 + n * 2), dv = new DataView(wav), w = (o, str) => { for (let i = 0; i < str.length; i++) dv.setUint8(o + i, str.charCodeAt(i)); };
     w(0, 'RIFF'); dv.setUint32(4, 36 + n * 2, true); w(8, 'WAVE'); w(12, 'fmt '); dv.setUint32(16, 16, true); dv.setUint16(20, 1, true); dv.setUint16(22, 1, true);
     dv.setUint32(24, sr, true); dv.setUint32(28, sr * 2, true); dv.setUint16(32, 2, true); dv.setUint16(34, 16, true); w(36, 'data'); dv.setUint32(40, n * 2, true);
